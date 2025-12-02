@@ -1,0 +1,60 @@
+# Diretórios de build
+obj/
+bin/
+build/
+*.o
+*.a
+*.so
+*.dylib
+
+# Executáveis
+soundwave
+*.exe
+*.out
+
+# Arquivos de áudio (mantém apenas exemplos pequenos se necessário)
+*.mp3
+*.wav
+*.flac
+*.ogg
+*.m4a
+*.aac
+
+# Arquivos de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Arquivos de backup
+*.bak
+*.backup
+*~
+
+# Arquivos temporários
+*.tmp
+*.log
+*.cache
+
+# Arquivos de sistema
+Thumbs.db
+desktop.ini
+
+# Arquivos de documentação gerados
+*.pdf
+*.html
+
+# Arquivos de configuração local (se houver)
+config.local
+.env
+
+# Core dumps
+core
+core.*
+
+# Arquivos de teste
+test_*
+*_test
+
