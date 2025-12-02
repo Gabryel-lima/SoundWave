@@ -106,7 +106,7 @@ Visualizer* visualizer_init(int width, int height, const char* title) {
     vis->bar_heights = malloc(vis->max_bars * sizeof(double));
     
     // Aloca sistema de partículas (aumentado)
-    vis->max_particles = 500;  // Aumentado de 200 para 500
+    vis->max_particles = 1000;  // Aumentado de 500 para 1000
     vis->particles = malloc(vis->max_particles * sizeof(Particle));
     vis->num_particles = 0;
     
