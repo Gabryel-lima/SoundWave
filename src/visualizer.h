@@ -53,5 +53,24 @@ int visualizer_get_height(Visualizer* vis);
 void visualizer_draw_waveform_scroll(Visualizer* vis, const int16_t* samples, int num_samples,
                                       RGBColor* colors);
 
+// Desenha barras de frequência animadas
+// frequencies: array de magnitudes de frequência do FFT
+// num_bins: número de bins de frequência
+// num_bars: número de barras a desenhar
+void visualizer_draw_frequency_bars(Visualizer* vis, const double* frequencies, int num_bins, int num_bars);
+
+// Desenha waveform fluida/ambient com efeitos
+// samples: array de samples
+// num_samples: número de samples
+// frequencies: array de frequências para cores
+// colors: cores correspondentes
+void visualizer_draw_fluid_waveform(Visualizer* vis, const int16_t* samples, int num_samples,
+                                     const double* frequencies, RGBColor* colors);
+
+// Atualiza e desenha sistema de partículas
+// frequencies: array de frequências para gerar partículas
+// num_bins: número de bins
+void visualizer_update_particles(Visualizer* vis, const double* frequencies, int num_bins);
+
 #endif // VISUALIZER_H
 

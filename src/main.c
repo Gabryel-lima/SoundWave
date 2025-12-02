@@ -289,8 +289,17 @@ int main(int argc, char* argv[]) {
         // Limpa tela
         visualizer_clear(vis);
         
-        // Desenha forma de onda com scroll contínuo (melhor visualização)
-        visualizer_draw_waveform_scroll(vis, audio_buffer, samples_read, colors);
+        // Desenha múltiplas camadas de visualização
+        if (fft_buffer_ready || fft_circular_pos >= FFT_WINDOW_SIZE) {
+            // 1. Waveform fluida/ambient
+            visualizer_draw_fluid_waveform(vis, audio_buffer, samples_read, frequencies, colors);
+            
+            // 2. Partículas
+            visualizer_update_particles(vis, frequencies, FFT_WINDOW_SIZE / 2 + 1);
+        } else {
+            // Fallback: waveform simples enquanto carrega
+            visualizer_draw_waveform_scroll(vis, audio_buffer, samples_read, colors);
+        }
         
         // Atualiza tela
         visualizer_present(vis);
