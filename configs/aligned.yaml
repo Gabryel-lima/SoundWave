@@ -1,0 +1,26 @@
+# ALINHAMENTO POR SOBREVIVENCIA CONJUNTA.
+#
+# Escolhe, entre 4 candidatos declarados, o que maximiza
+#
+#     J(M) = media sobre log f de  T_som(f) * T_luz(M(f))
+#
+# no meio e caminho configurados. E o primeiro criterio EXTERNO do projeto: o
+# primeiro argumento a favor de um mapeamento que nao e "parece razoavel".
+#
+# RESULTADO MEDIDO, E E NULO: em agua os quatro candidatos empatam dentro de
+# 0,04%. A razao e que as janelas de transicao dos dois filtros estao separadas
+# por 4 decadas e nao se sobrepoem -- nao ha distancia em que ambos discriminem.
+# Ver docs/physics.md secao 6 e `soundwave align sea-water`.
+#
+# A configuracao existe para tornar esse resultado reproduzivel, nao porque o
+# mapeamento seja melhor que o logaritmico. Ele nao e -- e agora sabemos por que.
+
+mapping:
+  type: aligned
+  reference_hz: 440       # so afeta os candidatos de oitava
+
+environment:
+  filter_medium: sea-water
+  path_length_m: 10       # na janela em que a luz discrimina
+  temperature_c: 20
+  salinity_ppt: 35

@@ -1,60 +1,43 @@
-# Diretórios de build
-obj/
-bin/
+# Build
 build/
+build-*/
+cmake-build-*/
+out/
 *.o
 *.a
 *.so
 *.dylib
 
-# Executáveis
-soundwave
-*.exe
-*.out
+# Saidas geradas pelos exemplos e pelo CLI
+ruler_*.png
+*.ppm
 
-# Arquivos de áudio (mantém apenas exemplos pequenos se necessário)
+# Audio: nao versionar. Use `soundwave gen` para sinais de teste
+# determinísticos -- eles sao reproduziveis e nao ocupam espaco no repositorio.
 *.mp3
 *.wav
 *.flac
 *.ogg
 *.m4a
 *.aac
+!assets/*.wav
 
-# Arquivos de IDE
+# IDE / editor
 .vscode/
 .idea/
+.cache/
+compile_commands.json
 *.swp
 *.swo
 *~
 .DS_Store
 
-# Arquivos de backup
-*.bak
-*.backup
-*~
-
-# Arquivos temporários
-*.tmp
-*.log
-*.cache
-
-# Arquivos de sistema
+# Sistema
 Thumbs.db
 desktop.ini
 
-# Arquivos de documentação gerados
-*.pdf
-*.html
-
-# Arquivos de configuração local (se houver)
-config.local
-.env
-
-# Core dumps
-core
-core.*
-
-# Arquivos de teste
-test_*
-*_test
-
+# Core dumps -- ancorados na raiz com "/" de proposito. Sem a barra, o padrao
+# "core" casa com QUALQUER arquivo ou diretorio chamado core em qualquer nivel,
+# e passa a ignorar src/core/ e include/soundwave/core/ silenciosamente.
+/core
+/core.*

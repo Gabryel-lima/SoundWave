@@ -1,0 +1,12 @@
+# CONTRA-EXEMPLO. Nao use para produzir resultados -- use para ver por que o
+# mapeamento linear e inadequado.
+#
+# A percepcao de altura e logaritmica. Em escala linear, metade do eixo audivel
+# (10-20 kHz) e uma unica oitava, enquanto as nove restantes se espremem na
+# outra metade. Resultado: a escala cromatica inteira de A4 a A5 recebe a MESMA
+# cor (255,0,86) nas treze notas.
+#
+#   soundwave compare "gen:sweep:0:3" --out out/compare
+
+mapping:
+  type: linear

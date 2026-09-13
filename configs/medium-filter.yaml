@@ -1,0 +1,24 @@
+# FILTRO DE MEIO: a parte da ideia "inserir o espectro no ambiente" que funciona.
+#
+# O meio nao desloca frequencias -- mas atenua de forma dependente da frequencia,
+# nos dois dominios. Em agua do mar:
+#
+#   som 20 Hz  -> meia potencia em 90.607 km   (canal SOFAR)
+#   som 20 kHz -> meia potencia em 1,2 km
+#   luz 450 nm -> meia potencia em 15,3 m
+#   luz 750 nm -> meia potencia em 13,2 cm
+#
+# Ou seja: a agua e PASSA-BAIXA para som e PASSA-ALTA para luz. Como todo
+# mapeamento monotonico leva grave em vermelho, o meio destroi exatamente o que o
+# mapeamento preservou. Os dois filtros sao antagonicos. Ver docs/physics.md.
+#
+#   soundwave analyze "gen:sweep:0:5" --config configs/medium-filter.yaml
+#   soundwave medium sea-water
+
+environment:
+  apply_medium_filter: true
+  filter_medium: sea-water
+  path_length_m: 20000      # 20 km de agua
+  temperature_c: 20
+  salinity_ppt: 35
+  depth_m: 100

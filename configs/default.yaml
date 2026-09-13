@@ -1,0 +1,40 @@
+# Configuracao padrao do SoundWave.
+#
+# Guarde este arquivo junto com as imagens produzidas -- sem ele o resultado
+# nao e reproduzivel. Ver docs/reproducibility.md.
+
+analysis:
+  sample_rate: 0          # 0 = usar a taxa do arquivo de entrada
+  fft_size: 4096          # potencia de dois; 4096 => df ~ 10,77 Hz a 44,1 kHz
+  hop_size: 1024          # sobreposicao de 75%
+  window: hann            # rectangular | hann | hamming | blackman | blackman-harris
+  remove_dc: true
+  normalize_blocks: false # true torna a cor independente do volume -- e do ruido tambem
+
+mapping:
+  type: logarithmic       # linear | logarithmic | octave | custom
+  source_min_hz: 20
+  source_max_hz: 20000
+  target_min_hz: 3.997232773333333e14   # 750 nm
+  target_max_hz: 7.494811450000000e14   # 400 nm
+  reference_hz: 440       # so para type: octave
+  out_of_range: clamp     # clamp | extrapolate | discard
+
+color:
+  mode: visible-with-bands  # visible-only | visible-with-bands | full-em-spectrum
+  gamut: desaturate         # clip | desaturate | desaturate-scale
+  normalise_luminance: true # escolha de visualizacao, nao fisica
+
+interpretation:
+  mode: dominant            # dominant | weighted | spectral
+  analysis_min_hz: 20
+  analysis_max_hz: 20000
+  max_contributions: 32
+  magnitude_floor_ratio: 0.02
+  weight_exponent: 1        # 1 = por amplitude, 2 = por energia
+  silence_threshold: 1e-05
+
+render:
+  width: 1200
+  height: 500
+  log_frequency_axis: true  # praticamente obrigatorio: em linear os graves somem
