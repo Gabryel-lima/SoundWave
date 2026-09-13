@@ -31,7 +31,7 @@ f_som  →  f_EM  →  λ  →  XYZ  →  sRGB
 
 ```bash
 cmake -S . -B build && cmake --build build -j
-./build/soundwave_tests          # 139 testes, sem dependência nenhuma
+./build/soundwave_tests          # 174 testes, sem dependência nenhuma
 
 ./build/soundwave info           # a assimetria audível/visível
 ./build/soundwave map 440        # a cadeia completa para uma frequência
@@ -65,6 +65,83 @@ A mesma nota uma oitava acima (880 Hz):
 
 Três cores completamente diferentes para o **mesmo** som. Essa é a tese do
 projeto, demonstrada em uma linha de terminal.
+
+## As hipóteses nulas: e se você não inventar nada?
+
+O projeto implementa os dois únicos mapeamentos que **não** exigem inventar uma
+função — e ambos respondem a mesma coisa.
+
+| Mapeamento | Base física | 440 Hz vira | Fidelidade |
+|---|---|---|---|
+| `identity` | `E = h·f` — preserva energia por quantum | 440 Hz, λ = 681 km, **rádio ELF** | **`Exact`** |
+| `scale` | `λ = v/f`, forma fixada pela física | λ = 34,1 nm, **ultravioleta** | 1 parâmetro livre |
+
+Em `scale`, a **forma** da função é física; só a constante `K` é escolhida. Toda a
+arbitrariedade cabe em um número — epistemicamente melhor que `log`, onde a curva
+inteira é invenção.
+
+E o preço é mensurável: escala pura é uma isometria em espaço logarítmico, então a
+janela visível captura exatamente sua própria largura. Ancorando 20 Hz em 750 nm,
+**só 20–37,5 Hz cai no visível: 0,907 de 9,966 oitavas, 9,1% da banda audível.**
+440 Hz vai para o ultravioleta, 20 kHz para os raios X.
+
+> **Esse é o preço real da honestidade física. Esticar e espremer não é uma
+> trapaça opcional — é a única forma de o audível caber no visível.**
+
+## Os meios não resolvem — e isso é demonstrável
+
+Trocar de meio multiplica todos os λ de uma faixa por um fator constante, e um
+fator constante não altera a razão máx/mín. **O meio cancela.**
+
+| Meio | v_som | λ@20 Hz | λ@20 kHz | **razão** |
+|---|---|---|---|---|
+| ar | 343 | 17,16 m | 1,72 cm | **1000,0** |
+| água do mar | 1521 | 76,07 m | 7,61 cm | **1000,0** |
+| gelo | 3840 | 192,00 m | 19,20 cm | **1000,0** |
+
+A compressão de ~11× é **invariante sob qualquer mudança de meio**. Só a dispersão
+a altera, e em ~1%. Ver [`docs/physics.md`](docs/physics.md).
+
+### Onde o meio importa de verdade: os filtros antagônicos
+
+Distância de meia potência em água do mar:
+
+| SOM | | LUZ | |
+|---|---|---|---|
+| 20 Hz | **90.607 km** | 450 nm | **15,3 m** |
+| 20 kHz | 1,2 km | 750 nm | **13,2 cm** |
+
+> **A água é passa-baixa para som e passa-alta para luz.** O mesmo meio preserva
+> os GRAVES do som e os AZUIS da luz — mas todo mapeamento monotônico leva grave
+> em VERMELHO. O meio destrói exatamente o que o mapeamento preservou.
+>
+> "O mesmo ambiente para os dois" não produz equivalência. Produz **conflito**.
+
+```bash
+./build/soundwave medium sea-water
+```
+
+## Até onde é confiável: classificação de fidelidade
+
+Todo resultado vem com um orçamento que classifica **cada etapa**:
+
+| Classe | Tem barra de erro? | Exemplo |
+|---|---|---|
+| `Exact` | sim, ~10⁻¹⁶ | `c`, `λ = c/f`, `E = h·f` |
+| `Measured` | **sim** | frequência dominante (±0,12% a 440 Hz) |
+| `ModelFit` | **sim** | Sellmeier, ISO 9613-1, Mackenzie |
+| `Convention` | às vezes | sRGB, observador CIE 1931 |
+| `Arbitrary` | **não** | o mapeamento f_som → f_EM |
+
+> **Regra central: se qualquer etapa for `Arbitrary`, a incerteza combinada é
+> INDEFINIDA.** Escrever `566,1 ± 0,3 nm` para um λ que só existe porque alguém
+> escolheu uma função seria uma mentira com casas decimais.
+
+```bash
+./build/soundwave fidelity --config configs/scale-physical.yaml
+```
+
+Ver [`docs/fidelity.md`](docs/fidelity.md).
 
 ## A assimetria que governa tudo
 
@@ -123,7 +200,9 @@ Ver [`docs/architecture.md`](docs/architecture.md).
 |---------|-----------|
 | `analyze <entrada>` | Pipeline completo → PNGs + CSV + manifesto |
 | `compare <entrada>` | Mesmo sinal sob os três mapeamentos, lado a lado |
-| `map <hz>` | A cadeia `f_som → f_EM → λ → banda → sRGB` |
+| `map <hz>` | A cadeia `f_som → f_EM → λ → banda → sRGB`, nos cinco mapeamentos |
+| `medium [meio]` | Propriedades reais do meio, a invariância e os filtros antagônicos |
+| `fidelity` | Orçamento de fidelidade: natureza e incerteza de cada etapa |
 | `gen <tipo> <saída.wav>` | Sinais de teste determinísticos |
 | `config [saída.yaml]` | Configuração padrão comentada |
 | `info` | Constantes, domínios e a assimetria |
@@ -181,9 +260,26 @@ O determinismo é verificado **bit a bit** nos testes, não "dentro de uma
 tolerância". Ver [`docs/reproducibility.md`](docs/reproducibility.md).
 
 Configurações prontas em [`configs/`](configs/): `default`, `octave`,
-`weighted-harmonics`, `full-spectrum`, `linear-counterexample`.
+`weighted-harmonics`, `full-spectrum`, `linear-counterexample`,
+`scale-physical`, `identity-physical`, `medium-filter`.
 
-## Limitações declaradas
+## Limitações que NÃO podem ser superadas
+
+Estas não são pendências. São restrições estruturais; nenhuma versão futura vai
+removê-las. Lista completa e justificada em [`docs/physics.md`](docs/physics.md) §6.
+
+| # | Limitação | Por quê |
+|---|---|---|
+| 1 | Frequência não muda com o meio | Continuidade de fase na interface |
+| 2 | A compressão de 11× é invariante | `v` e `n` cancelam — é álgebra |
+| 3 | Nenhum meio real fecha a lacuna | Faltam 4–7 ordens de grandeza em `v_som` |
+| 4 | Escala pura só cobre 9,1% do audível | Isometria em espaço log |
+| 5 | Oitava e monotonicidade são incompatíveis | Periodicidade exclui injetividade |
+| 6 | >90% das cores espectrais não cabem no sRGB | O locus é externo ao triângulo |
+| 7 | Som não se combina como luz | Duas senoides dão dois picos, não um médio |
+| 8 | Não existe "a cor de uma frequência sonora" | Domínios sem mecanismo comum |
+
+## Limitações do estado atual
 
 - **Resolução nos graves.** Com `fft_size: 4096` a 44,1 kHz, `Δf ≈ 10,77 Hz`. A
   55 Hz um semitom vale ~3,3 Hz — o SoundWave **não** resolve notas graves
@@ -210,6 +306,8 @@ Configurações prontas em [`configs/`](configs/): `default`, `octave`,
 | [`docs/theory.md`](docs/theory.md) | FFT, janelas, resolução, interpolação de pico |
 | [`docs/mapping.md`](docs/mapping.md) | A escolha arbitrária e o problema da oitava |
 | [`docs/color.md`](docs/color.md) | CIE 1931, gamut, pseudocor |
+| [`docs/physics.md`](docs/physics.md) | Meios, invariância, hipóteses nulas, limites intransponíveis |
+| [`docs/fidelity.md`](docs/fidelity.md) | Classificação de fidelidade e orçamento de incerteza |
 | [`docs/reproducibility.md`](docs/reproducibility.md) | Configuração, manifesto, determinismo |
 
 ## Estrutura
@@ -220,11 +318,12 @@ include/soundwave/        src/
 ├── audio/   PCM, WAV, geradores de sinal
 ├── dsp/     janelas, FFT, analisador
 ├── mapping/ FrequencyMapper e implementações    ← camada 2
+├── physics/ meios reais, fidelidade, filtros    ← base física
 ├── color/   CIE 1931, sRGB, bandas EM           ← camada 3
 ├── render/  imagem, PNG, interpretação, gráficos
 └── viz/     tempo real com SDL2 (opcional)
 
-tests/      139 testes, framework próprio
+tests/      174 testes, framework próprio
 examples/   pipeline mínimo, comparação de mapeamentos
 configs/    configurações prontas e comentadas
 docs/       teoria, mapeamento, cor, reprodutibilidade

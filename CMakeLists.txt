@@ -40,6 +40,10 @@ add_library(soundwave_core
     src/dsp/analyzer.cpp
     src/mapping/frequency_mapper.cpp
     src/mapping/mappers.cpp
+    src/physics/fidelity.cpp
+    src/physics/medium.cpp
+    src/physics/medium_filter.cpp
+    src/mapping/physical_mappers.cpp
     src/color/spectral.cpp
     src/color/cie_tables.cpp
     src/color/srgb.cpp
@@ -135,6 +139,7 @@ if(SOUNDWAVE_BUILD_TESTS)
         tests/test_mapping.cpp
         tests/test_color.cpp
         tests/test_cie.cpp
+        tests/test_physics.cpp
         tests/test_audio.cpp
         tests/test_config.cpp
         tests/test_pipeline.cpp

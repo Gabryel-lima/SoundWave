@@ -22,6 +22,8 @@ int main(int argc, char** argv) {
         if (command == "gen" || command == "generate") return commandGenerate(args);
         if (command == "config") return commandConfig(args);
         if (command == "info") return commandInfo(args);
+        if (command == "medium") return commandMedium(args);
+        if (command == "fidelity") return commandFidelity(args);
         if (command == "live") return commandLive(args);
         if (command == "help" || command == "--help" || command == "-h") {
             printUsage();

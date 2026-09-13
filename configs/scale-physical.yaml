@@ -1,0 +1,25 @@
+# HIPOTESE NULA FISICA: lambda_luz = K * lambda_som
+#
+# A forma da funcao e fixada pela fisica (lambda ~ 1/f); so a constante K e
+# escolhida. Toda a arbitrariedade cabe em UM numero -- epistemicamente melhor
+# que log ou linear, onde a curva inteira e invencao.
+#
+# O preco: escala pura e isometria em espaco logaritmico, entao o visivel captura
+# exatamente sua propria largura, 0,907 de 9,966 oitavas. So 20-37,5 Hz fica
+# visivel; 440 Hz vai a ultravioleta e 20 kHz a raios X.
+#
+# Por isso out_of_range: extrapolate e color.mode: visible-with-bands sao
+# obrigatorios aqui -- prender nas bordas esconderia justamente o resultado.
+#
+#   soundwave analyze "gen:sweep:0:5" --config configs/scale-physical.yaml
+
+mapping:
+  type: scale
+  acoustic_medium: air      # vacuum nao propaga som e e rejeitado
+  optical_medium: vacuum
+  anchor_hz: 20             # ancora 20 Hz...
+  anchor_nm: 750            # ...no vermelho profundo
+  out_of_range: extrapolate
+
+color:
+  mode: visible-with-bands  # pseudocor para UV e raios X, sempre rotulada

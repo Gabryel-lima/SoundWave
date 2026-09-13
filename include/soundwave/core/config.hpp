@@ -9,6 +9,7 @@
 #include "soundwave/core/version.hpp"
 #include "soundwave/dsp/analyzer.hpp"
 #include "soundwave/mapping/frequency_mapper.hpp"
+#include "soundwave/physics/medium_filter.hpp"
 #include "soundwave/render/interpretation.hpp"
 
 namespace soundwave {
@@ -37,7 +38,12 @@ struct AnalysisConfig {
     } analysis;
 
     struct Mapping {
-        std::string type = "logarithmic";  // linear | logarithmic | octave | custom
+        // linear | logarithmic | octave | custom | identity | scale
+        //
+        // identity e scale sao as HIPOTESES NULAS fisicamente fundamentadas.
+        // Ver docs/physics.md: elas mostram o que acontece quando voce se recusa
+        // a inventar a funcao -- e a resposta e que quase nada fica visivel.
+        std::string type = "logarithmic";
         double sourceMinHz = kAudibleMinHz;
         double sourceMaxHz = kAudibleMaxHz;
         double targetMinHz = kVisibleMinHz;
@@ -45,7 +51,29 @@ struct AnalysisConfig {
         double referenceHz = 440.0;        // so para o tipo octave
         std::string outOfRange = "clamp";
         std::vector<std::pair<double, double>> controlPoints;  // so para custom
+
+        // Apenas para type: scale.
+        std::string acousticMedium = "air";   // meio onde o som se propaga
+        std::string opticalMedium = "vacuum"; // meio onde a luz se propaga
+        double anchorHz = 20.0;               // f_som ancorada...
+        double anchorNm = 750.0;              // ...neste comprimento de onda
     } mapping;
+
+    // Condicoes ambientais dos modelos fisicos. So tem efeito com type: scale
+    // ou com o filtro de meio ativo.
+    struct Environment {
+        double temperatureC = 20.0;
+        double pressureKPa = 101.325;
+        double relativeHumidity = 70.0;
+        double salinityPpt = 35.0;
+        double depthM = 0.0;
+        double pH = 8.1;
+
+        // Filtro de meio: atenua o espectro pela absorcao real do meio.
+        bool applyMediumFilter = false;
+        std::string filterMedium = "sea-water";
+        double pathLengthM = 10.0;
+    } environment;
 
     struct Color {
         std::string mode = "visible-with-bands";
@@ -95,6 +123,14 @@ struct ConfigLoadResult {
 [[nodiscard]] AnalyzerSettings makeAnalyzerSettings(const AnalysisConfig& config);
 [[nodiscard]] ColorEngineSettings makeColorEngineSettings(const AnalysisConfig& config);
 [[nodiscard]] InterpreterSettings makeInterpreterSettings(const AnalysisConfig& config);
+[[nodiscard]] Conditions makeConditions(const AnalysisConfig& config);
+[[nodiscard]] MediumFilterSettings makeMediumFilterSettings(const AnalysisConfig& config);
+
+// Orcamento de fidelidade da configuracao inteira: toda etapa do pipeline
+// declara sua natureza e incerteza. Ver docs/fidelity.md.
+[[nodiscard]] FidelityBudget pipelineFidelity(const AnalysisConfig& config,
+                                              const FrequencyMapper& mapper,
+                                              double resolutionHz, double representativeHz);
 
 // Manifesto do experimento: a configuracao efetiva mais o que a identifica.
 // Gravado junto de toda saida.
@@ -107,6 +143,7 @@ struct RunManifest {
     std::size_t inputSamples = 0;
     std::string mapperDescription;  // describe() do mapeador de fato usado
     AnalysisConfig config;
+    FidelityBudget fidelity;        // natureza e incerteza de cada etapa
 };
 
 [[nodiscard]] std::string manifestToYaml(const RunManifest& manifest);

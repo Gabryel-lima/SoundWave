@@ -24,6 +24,8 @@ int commandMap(const Args& args);
 int commandGenerate(const Args& args);
 int commandConfig(const Args& args);
 int commandInfo(const Args& args);
+int commandMedium(const Args& args);
+int commandFidelity(const Args& args);
 int commandLive(const Args& args);
 
 void printUsage();

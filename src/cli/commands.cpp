@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <algorithm>
 #include <memory>
 
 #include "soundwave/audio/signal_generator.hpp"
@@ -14,6 +15,8 @@
 #include "soundwave/mapping/mappers.hpp"
 #include "soundwave/render/interpretation.hpp"
 #include "soundwave/render/plots.hpp"
+#include "soundwave/mapping/physical_mappers.hpp"
+#include "soundwave/physics/medium_filter.hpp"
 #include "soundwave/viz/realtime.hpp"
 
 namespace soundwave::cli {
@@ -31,9 +34,53 @@ constexpr const char* kDisclaimer =
     "  matematica escolhida por voce entre dois dominios de frequencia sem\n"
     "  relacao fisica entre si. Trocar a funcao troca o resultado.";
 
+// Cobre de ELF (dezenas de Hz) a raios gama.
+std::string formatSpectralHz(double hz) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(2);
+    if (hz >= 1e15) out << (hz / 1e15) << " PHz";
+    else if (hz >= 1e12) out << (hz / 1e12) << " THz";
+    else if (hz >= 1e9) out << (hz / 1e9) << " GHz";
+    else if (hz >= 1e6) out << (hz / 1e6) << " MHz";
+    else if (hz >= 1e3) out << (hz / 1e3) << " kHz";
+    else out << hz << " Hz";
+    return out.str();
+}
+
+std::string formatWavelength(double metres) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(1);
+    if (metres >= 1e3) out << (metres / 1e3) << " km";
+    else if (metres >= 1.0) out << metres << " m";
+    else if (metres >= 1e-3) out << (metres * 1e3) << " mm";
+    else if (metres >= 1e-6) out << (metres * 1e6) << " um";
+    else if (metres >= 1e-9) out << (metres * 1e9) << " nm";
+    else out << std::scientific << std::setprecision(2) << metres << " m";
+    return out.str();
+}
+
 std::string formatThz(double hz) {
     std::ostringstream out;
     out << std::fixed << std::setprecision(2) << (hz / 1e12) << " THz";
+    return out.str();
+}
+
+// Distancias uteis aqui vao de centimetros a dezenas de milhares de km.
+std::string formatDistance(double metres) {
+    std::ostringstream out;
+    if (!std::isfinite(metres)) return "infinita";
+    if (metres >= 1e6) out << std::fixed << std::setprecision(0) << (metres / 1000.0) << " km";
+    else if (metres >= 1000.0) out << std::fixed << std::setprecision(1) << (metres / 1000.0) << " km";
+    else if (metres >= 1.0) out << std::fixed << std::setprecision(1) << metres << " m";
+    else out << std::fixed << std::setprecision(2) << (metres * 100.0) << " cm";
+    return out.str();
+}
+
+std::string formatLambda(double metres) {
+    std::ostringstream out;
+    if (metres >= 1.0) out << std::fixed << std::setprecision(2) << metres << " m";
+    else if (metres >= 0.01) out << std::fixed << std::setprecision(2) << (metres * 100.0) << " cm";
+    else out << std::fixed << std::setprecision(1) << (metres * 1e9) << " nm";
     return out.str();
 }
 
@@ -234,7 +281,16 @@ int commandAnalyze(const Args& args) {
 
     const AnalyzerSettings analyzerSettings = makeAnalyzerSettings(config);
     SpectrumAnalyzer analyzer(analyzerSettings, buffer.sampleRate);
-    const std::vector<Spectrum> frames = analyzer.analyzeAll(buffer);
+    std::vector<Spectrum> frames = analyzer.analyzeAll(buffer);
+
+    // Filtro de meio: atenua o espectro pela absorcao REAL do meio ao longo de
+    // um caminho. Nao desloca frequencia -- so magnitude. Ver docs/physics.md.
+    if (config.environment.applyMediumFilter) {
+        const MediumFilterSettings filter = makeMediumFilterSettings(config);
+        for (Spectrum& spectrum : frames) spectrum = applyAcousticFilter(spectrum, filter);
+        std::cout << "filtro de meio : " << filter.acoustic.name << ", "
+                  << filter.pathLengthM << " m de caminho acustico\n";
+    }
 
     const std::unique_ptr<FrequencyMapper> mapper = makeMapper(config);
     const ColorEngine engine(makeColorEngineSettings(config));
@@ -303,6 +359,14 @@ int commandAnalyze(const Args& args) {
     manifest.inputSamples = buffer.frameCount();
     manifest.mapperDescription = mapper->describe();
     manifest.config = config;
+    // Frequencia de referencia do orcamento: a dominante do quadro do meio, que
+    // e mais representativa do sinal do que um valor fixo.
+    const double representativeHz =
+        interpretations.empty() ? 440.0
+                                : std::max(20.0, interpretations[interpretations.size() / 2]
+                                                     .dominantSourceHz);
+    manifest.fidelity =
+        pipelineFidelity(config, *mapper, analyzer.resolutionHz(), representativeHz);
     manifest.config.analysis.sampleRate = buffer.sampleRate;  // taxa efetiva, nao a pedida
 
     std::string manifestError;
@@ -314,7 +378,7 @@ int commandAnalyze(const Args& args) {
         allSaved = false;
     }
 
-    std::cout << "\n" << kDisclaimer << "\n";
+    std::cout << "\n" << manifest.fidelity.report() << "\n" << kDisclaimer << "\n";
     return allSaved ? 0 : 1;
 }
 
@@ -389,14 +453,20 @@ int commandMap(const Args& args) {
 
     std::cout << kBanner << "\n\n"
               << "f_som = " << frequency << " Hz, sob cada mapeamento:\n\n"
-              << std::left << std::setw(14) << "mapeamento" << std::setw(14) << "f_EM"
-              << std::setw(12) << "lambda" << std::setw(14) << "banda" << std::setw(18) << "sRGB"
+              << std::left << std::setw(14) << "mapeamento" << std::setw(16) << "f_EM"
+              << std::setw(14) << "lambda" << std::setw(14) << "banda" << std::setw(18) << "sRGB"
               << "fora do gamut\n"
-              << std::string(78, '-') << "\n";
+              << std::string(92, '-') << "\n";
 
-    for (const char* type : {"linear", "logarithmic", "octave"}) {
+    // Inclui os dois mapeadores fisicos. Eles precisam de extrapolate: prender
+    // nas bordas do visivel esconderia justamente o resultado deles, que e cair
+    // fora do visivel.
+    for (const char* type : {"linear", "logarithmic", "octave", "identity", "scale"}) {
         AnalysisConfig variant = config;
         variant.mapping.type = type;
+        if (std::string(type) == "identity" || std::string(type) == "scale") {
+            variant.mapping.outOfRange = "extrapolate";
+        }
         const std::unique_ptr<FrequencyMapper> mapper = makeMapper(variant);
         const double em = mapper->map(frequency);
         const ColorResult colour = engine.fromEmFrequency(em);
@@ -405,11 +475,15 @@ int commandMap(const Args& args) {
         rgb << "(" << static_cast<int>(colour.rgb.r) << "," << static_cast<int>(colour.rgb.g)
             << "," << static_cast<int>(colour.rgb.b) << ")";
 
-        std::cout << std::left << std::setw(14) << type << std::setw(14) << formatThz(em)
-                  << std::setw(12) << formatNm(colour.wavelengthM) << std::setw(14)
+        std::cout << std::left << std::setw(14) << type << std::setw(16) << formatSpectralHz(em)
+                  << std::setw(14) << formatWavelength(colour.wavelengthM) << std::setw(14)
                   << emBandName(colour.band) << std::setw(18) << rgb.str()
                   << (colour.wasOutOfGamut ? "sim" : "nao") << "\n";
     }
+    std::cout << "\n  identity e scale sao as hipoteses NULAS: a primeira preserva energia\n"
+              << "  por quantum (E = h*f) e joga tudo em radio; a segunda fixa a forma da\n"
+              << "  funcao pela fisica e deixa so a escala livre -- e manda quase tudo para\n"
+              << "  fora do visivel. Ver docs/physics.md.\n";
 
     // A demonstracao mais direta da limitacao discutida em docs/mapping.md.
     std::cout << "\nA mesma nota uma oitava acima (" << frequency * 2.0 << " Hz):\n";
@@ -518,6 +592,140 @@ int commandInfo(const Args&) {
     return 0;
 }
 
+int commandMedium(const Args& args) {
+    AnalysisConfig config;
+    if (!resolveConfig(args, config)) return 2;
+    const Conditions conditions = makeConditions(config);
+
+    const std::string name = args.positional.size() > 1 ? args.positional[1] : "sea-water";
+    const auto medium = media::byName(name);
+    if (!medium) {
+        std::cerr << "erro: meio desconhecido: " << name << "\nmeios: ";
+        for (const Medium& m : media::all()) std::cerr << m.name << " ";
+        std::cerr << "\n";
+        return 2;
+    }
+    const double pathM = args.getDouble("path", 10.0);  // usado no orcamento de fidelidade
+
+    std::cout << kBanner << "\n\n"
+              << "MEIO: " << medium->name << "\n"
+              << "  " << medium->description << "\n"
+              << "  " << std::fixed << std::setprecision(1) << conditions.temperatureC
+              << " C, " << conditions.salinityPpt << " ppt, " << conditions.depthM << " m, pH "
+              << conditions.pH << ", " << conditions.relativeHumidity << "% UR\n\n";
+
+    // ---- 1. A frequencia NAO muda; o comprimento de onda muda ----------------
+    std::cout << "1. O MEIO NAO MUDA A FREQUENCIA -- MUDA O COMPRIMENTO DE ONDA\n"
+              << std::string(74, '=') << "\n"
+              << "   A continuidade de fase na interface forca a frequencia transmitida a\n"
+              << "   ser igual a incidente. Por isso um objeto vermelho continua vermelho\n"
+              << "   debaixo d'agua, embora lambda encolha. Cor segue FREQUENCIA.\n\n"
+              << "   " << std::left << std::setw(14) << "meio" << std::setw(13) << "v_som (m/s)"
+              << std::setw(15) << "lambda@20Hz" << std::setw(15) << "lambda@20kHz" << "razao\n"
+              << "   " << std::string(70, '-') << "\n";
+    for (const Medium& m : media::all()) {
+        if (!m.carriesSound()) continue;
+        const RangeSpan span = acousticSpan(m, 20.0, 20000.0, conditions);
+        std::cout << "   " << std::left << std::setw(14) << m.name << std::setw(13)
+                  << std::setprecision(0) << soundSpeedMs(m, conditions) << std::setw(15)
+                  << formatLambda(span.atLowFrequencyM) << std::setw(15)
+                  << formatLambda(span.atHighFrequencyM) << std::setprecision(1) << span.ratio
+                  << "\n";
+    }
+    std::cout << "\n   " << std::left << std::setw(14) << "meio" << std::setw(13) << "n(550nm)"
+              << std::setw(15) << "lambda@400nm" << std::setw(15) << "lambda@750nm" << "razao\n"
+              << "   " << std::string(70, '-') << "\n";
+    for (const Medium& m : media::all()) {
+        const RangeSpan span = opticalSpan(m, 400.0, 750.0);
+        std::cout << "   " << std::left << std::setw(14) << m.name << std::setw(13)
+                  << std::setprecision(4) << refractiveIndexAt(m, 550.0) << std::setw(15)
+                  << formatLambda(span.atHighFrequencyM) << std::setw(15)
+                  << formatLambda(span.atLowFrequencyM) << std::setprecision(4) << span.ratio
+                  << "\n";
+    }
+    std::cout << "\n   >>> A razao NAO muda com o meio: v e n cancelam. A compressao de\n"
+              << "       ~11x entre audivel e visivel e INVARIANTE. So a dispersao a\n"
+              << "       altera, e apenas em ~1%. Ver docs/physics.md.\n\n";
+
+    // ---- 2. Os dois filtros -------------------------------------------------
+    MediumFilterSettings filter;
+    filter.acoustic = *medium;
+    filter.optical = *medium;
+    filter.conditions = conditions;
+    filter.pathLengthM = pathM;
+
+    std::cout << "2. O MEIO FILTRA -- E OS DOIS FILTROS SAO ANTAGONICOS\n"
+              << std::string(74, '=') << "\n"
+              << "   A grandeza comparavel aqui NAO e a transmitancia a uma distancia fixa:\n"
+              << "   som e luz tem escalas caracteristicas separadas por ordens de grandeza.\n"
+              << "   Usamos a DISTANCIA DE MEIA POTENCIA (queda de 3 dB), que e livre de escala.\n\n"
+              << "   SOM                                      LUZ\n"
+              << "   " << std::left << std::setw(9) << "f (Hz)" << std::setw(12) << "dB/m"
+              << std::setw(16) << "meia potencia" << "  " << std::setw(7) << "nm"
+              << std::setw(12) << "dB/m" << "meia potencia\n"
+              << "   " << std::string(72, '-') << "\n";
+
+    const std::vector<double> freqs = {20, 100, 440, 2000, 8000, 20000};
+    const std::vector<double> nms = {400, 450, 500, 550, 650, 750};
+    const std::vector<FilterPoint> acoustic = acousticProfile(filter, freqs);
+    const std::vector<FilterPoint> optical = opticalProfile(filter, nms);
+    for (std::size_t i = 0; i < acoustic.size(); ++i) {
+        std::cout << "   " << std::left << std::setw(9) << std::setprecision(0) << std::fixed
+                  << acoustic[i].frequencyHz << std::setw(12) << std::scientific
+                  << std::setprecision(2) << acoustic[i].attenuationDbPerM << std::setw(16)
+                  << formatDistance(acoustic[i].halfDistanceM) << "  " << std::setw(7)
+                  << std::fixed << std::setprecision(0) << optical[i].wavelengthNm
+                  << std::setw(12) << std::scientific << std::setprecision(2)
+                  << optical[i].attenuationDbPerM << formatDistance(optical[i].halfDistanceM)
+                  << "\n";
+    }
+
+    const double bestHz = mostTransmittedAudibleHz(*medium, 20.0, 20000.0, conditions);
+    const double bestNm = mostTransmittedVisibleNm(*medium);
+    std::cout << "\n   sobrevive melhor:  som " << std::fixed << std::setprecision(1) << bestHz
+              << " Hz (GRAVE)   |   luz " << std::setprecision(0) << bestNm << " nm (AZUL)\n\n";
+
+    if (medium->opticalAbsorption != OpticalAbsorptionModel::NotModelled &&
+        medium->soundAbsorption != SoundAbsorptionModel::NotModelled) {
+        const LogMapper reference;
+        const double nmOfBestSound = kSpeedOfLight / reference.map(bestHz) * 1e9;
+        std::cout << "   >>> ANTAGONISMO: o meio preserva os GRAVES do som e os AZUIS da luz.\n"
+                  << "       Mas todo mapeamento monotonico leva grave em VERMELHO -- o\n"
+                  << "       mapeamento logaritmico poe " << std::fixed << std::setprecision(1)
+                  << bestHz << " Hz em " << std::setprecision(0) << nmOfBestSound << " nm.\n"
+                  << "       O meio destroi exatamente o que o mapeamento preservou.\n"
+                  << "       'O mesmo ambiente para os dois' nao da equivalencia: da conflito.\n\n";
+    }
+
+    // ---- 3. Fidelidade ------------------------------------------------------
+    FidelityBudget budget;
+    budget.add(soundSpeedClaim(*medium));
+    budget.add(soundAbsorptionClaim(*medium));
+    budget.add(refractiveIndexClaim(*medium));
+    budget.add(opticalAbsorptionClaim(*medium, 550.0));
+    std::cout << "3. " << budget.report() << "\n" << kDisclaimer << "\n";
+    return 0;
+}
+
+int commandFidelity(const Args& args) {
+    AnalysisConfig config;
+    if (!resolveConfig(args, config)) return 2;
+
+    const std::unique_ptr<FrequencyMapper> mapper = makeMapper(config);
+    const double sampleRate =
+        config.analysis.sampleRate > 0.0 ? config.analysis.sampleRate : 44100.0;
+    const double resolution = sampleRate / static_cast<double>(config.analysis.fftSize);
+    const double representative = args.getDouble("hz", 440.0);
+
+    std::cout << kBanner << "\n\n"
+              << "Configuracao: mapeamento " << config.mapping.type << ", FFT "
+              << config.analysis.fftSize << " a " << sampleRate << " Hz\n"
+              << "Grandeza de referencia: " << representative << " Hz\n\n"
+              << pipelineFidelity(config, *mapper, resolution, representative).report() << "\n"
+              << kDisclaimer << "\n";
+    return 0;
+}
+
 int commandLive(const Args& args) {
     if (args.positional.size() < 2) {
         std::cerr << "uso: soundwave live <arquivo.wav | gen:tipo:freq:dur> [--width] [--height]\n";
@@ -564,6 +772,11 @@ void printUsage() {
         << "      Gera sinais de teste deterministas.\n"
         << "  config [saida.yaml]\n"
         << "      Imprime ou grava a configuracao padrao comentada.\n"
+        << "  medium [meio] [--path metros]\n"
+        << "      Propriedades reais do meio, a invariancia e os dois filtros antagonicos.\n"
+        << "      meios: vacuum air fresh-water sea-water ice fused-silica\n"
+        << "  fidelity [--hz 440] [--config f.yaml]\n"
+        << "      Orcamento de fidelidade: natureza e incerteza de CADA etapa do pipeline.\n"
         << "  info\n"
         << "      Constantes, dominios e a assimetria audivel/visivel.\n"
         << "  live <entrada>\n"

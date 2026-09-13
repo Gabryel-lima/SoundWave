@@ -13,6 +13,7 @@
 #include "soundwave/core/version.hpp"
 #include "soundwave/dsp/fft.hpp"
 #include "soundwave/mapping/mappers.hpp"
+#include "soundwave/mapping/physical_mappers.hpp"
 
 namespace soundwave {
 namespace {
@@ -193,6 +194,20 @@ ConfigLoadResult parseConfig(const std::string& text) {
     readDouble("mapping.target_max_hz", config.mapping.targetMaxHz);
     readDouble("mapping.reference_hz", config.mapping.referenceHz);
     readString("mapping.out_of_range", config.mapping.outOfRange);
+    readString("mapping.acoustic_medium", config.mapping.acousticMedium);
+    readString("mapping.optical_medium", config.mapping.opticalMedium);
+    readDouble("mapping.anchor_hz", config.mapping.anchorHz);
+    readDouble("mapping.anchor_nm", config.mapping.anchorNm);
+
+    readDouble("environment.temperature_c", config.environment.temperatureC);
+    readDouble("environment.pressure_kpa", config.environment.pressureKPa);
+    readDouble("environment.relative_humidity", config.environment.relativeHumidity);
+    readDouble("environment.salinity_ppt", config.environment.salinityPpt);
+    readDouble("environment.depth_m", config.environment.depthM);
+    readDouble("environment.ph", config.environment.pH);
+    readBool("environment.apply_medium_filter", config.environment.applyMediumFilter);
+    readString("environment.filter_medium", config.environment.filterMedium);
+    readDouble("environment.path_length_m", config.environment.pathLengthM);
 
     if (auto it = entries.find("mapping.control_points"); it != entries.end()) {
         consumed.emplace_back("mapping.control_points");
@@ -263,8 +278,33 @@ std::vector<std::string> validateConfig(const AnalysisConfig& config) {
     }
 
     const std::string& type = config.mapping.type;
-    if (type != "linear" && type != "logarithmic" && type != "octave" && type != "custom") {
+    if (type != "linear" && type != "logarithmic" && type != "octave" && type != "custom" &&
+        type != "identity" && type != "scale") {
         problems.push_back("mapping.type desconhecido: " + type);
+    }
+    if (type == "scale") {
+        const auto acoustic = media::byName(config.mapping.acousticMedium);
+        if (!acoustic) {
+            problems.push_back("mapping.acoustic_medium desconhecido: " +
+                               config.mapping.acousticMedium);
+        } else if (!acoustic->carriesSound()) {
+            problems.push_back("mapping.acoustic_medium '" + config.mapping.acousticMedium +
+                               "' nao propaga som: onda mecanica exige meio material");
+        }
+        if (!media::byName(config.mapping.opticalMedium)) {
+            problems.push_back("mapping.optical_medium desconhecido: " +
+                               config.mapping.opticalMedium);
+        }
+        if (!(config.mapping.anchorHz > 0.0) || !(config.mapping.anchorNm > 0.0)) {
+            problems.emplace_back("mapping.anchor_hz e mapping.anchor_nm devem ser positivos");
+        }
+    }
+    if (config.environment.applyMediumFilter && !media::byName(config.environment.filterMedium)) {
+        problems.push_back("environment.filter_medium desconhecido: " +
+                           config.environment.filterMedium);
+    }
+    if (config.environment.pathLengthM < 0.0) {
+        problems.emplace_back("environment.path_length_m nao pode ser negativo");
     }
     if (type == "custom" && config.mapping.controlPoints.size() < 2) {
         problems.emplace_back("mapping.type=custom exige ao menos 2 mapping.control_points");
@@ -320,6 +360,16 @@ std::unique_ptr<FrequencyMapper> makeMapper(const AnalysisConfig& config) {
     (void)parseOutOfRangePolicy(config.mapping.outOfRange, policy);
 
     const std::string& type = config.mapping.type;
+    if (type == "identity") return std::make_unique<IdentityMapper>(domain);
+    if (type == "scale") {
+        const Medium acoustic =
+            media::byName(config.mapping.acousticMedium).value_or(media::air());
+        const Medium optical =
+            media::byName(config.mapping.opticalMedium).value_or(media::vacuum());
+        return std::make_unique<ScaleMapper>(ScaleMapper::anchored(
+            acoustic, optical, makeConditions(config), config.mapping.anchorHz,
+            config.mapping.anchorNm, domain));
+    }
     if (type == "linear") return std::make_unique<LinearMapper>(domain, policy);
     if (type == "octave") {
         return std::make_unique<OctaveMapper>(domain, config.mapping.referenceHz, policy);
@@ -360,6 +410,62 @@ InterpreterSettings makeInterpreterSettings(const AnalysisConfig& config) {
     return settings;
 }
 
+Conditions makeConditions(const AnalysisConfig& config) {
+    Conditions conditions;
+    conditions.temperatureC = config.environment.temperatureC;
+    conditions.pressureKPa = config.environment.pressureKPa;
+    conditions.relativeHumidity = config.environment.relativeHumidity;
+    conditions.salinityPpt = config.environment.salinityPpt;
+    conditions.depthM = config.environment.depthM;
+    conditions.pH = config.environment.pH;
+    return conditions;
+}
+
+MediumFilterSettings makeMediumFilterSettings(const AnalysisConfig& config) {
+    MediumFilterSettings settings;
+    const Medium medium =
+        media::byName(config.environment.filterMedium).value_or(media::seaWater());
+    settings.acoustic = medium;
+    settings.optical = medium;
+    settings.conditions = makeConditions(config);
+    settings.pathLengthM = config.environment.pathLengthM;
+    return settings;
+}
+
+FidelityBudget pipelineFidelity(const AnalysisConfig& config, const FrequencyMapper& mapper,
+                                double resolutionHz, double representativeHz) {
+    FidelityBudget budget;
+
+    // Camada 1 -- analise. E medida, e tem incerteza mensuravel.
+    budget.add(claims::fftResolution(resolutionHz, representativeHz));
+
+    // Camada 2 -- transformacao. Aqui mora a escolha, salvo nos dois mapeadores
+    // fisicos, que declaram o proprio orcamento.
+    if (const auto* scale = dynamic_cast<const ScaleMapper*>(&mapper)) {
+        budget.merge(scale->fidelity());
+    } else if (const auto* identity = dynamic_cast<const IdentityMapper*>(&mapper)) {
+        budget.add(identity->fidelity());
+    } else {
+        budget.add(claims::arbitraryMapping(mapper.name()));
+    }
+
+    // Camada 3 -- conversao.
+    budget.add(claims::speedOfLight());
+    budget.add(claims::wavelengthFromFrequency());
+    budget.add(claims::visibleRangeConvention());
+    budget.add(claims::cie1931Observer());
+    budget.add(claims::srgbEncoding());
+    budget.add(claims::gamutMapping());
+    if (config.color.normaliseLuminance) budget.add(claims::luminanceNormalisation());
+
+    // Filtro de meio, quando ativo.
+    if (config.environment.applyMediumFilter) {
+        const MediumFilterSettings filter = makeMediumFilterSettings(config);
+        budget.merge(filterFidelity(filter, 550.0));
+    }
+    return budget;
+}
+
 std::string configToYaml(const AnalysisConfig& config) {
     std::ostringstream out;
     out << "analysis:\n"
@@ -377,7 +483,12 @@ std::string configToYaml(const AnalysisConfig& config) {
         << "  target_min_hz: " << formatDouble(config.mapping.targetMinHz) << "\n"
         << "  target_max_hz: " << formatDouble(config.mapping.targetMaxHz) << "\n"
         << "  reference_hz: " << formatDouble(config.mapping.referenceHz) << "\n"
-        << "  out_of_range: " << config.mapping.outOfRange << "\n";
+        << "  out_of_range: " << config.mapping.outOfRange << "\n"
+        << "  acoustic_medium: " << config.mapping.acousticMedium
+        << "   # so para type: scale\n"
+        << "  optical_medium: " << config.mapping.opticalMedium << "\n"
+        << "  anchor_hz: " << formatDouble(config.mapping.anchorHz) << "\n"
+        << "  anchor_nm: " << formatDouble(config.mapping.anchorNm) << "\n";
     if (!config.mapping.controlPoints.empty()) {
         out << "  control_points: [";
         for (std::size_t i = 0; i < config.mapping.controlPoints.size(); ++i) {
@@ -387,6 +498,18 @@ std::string configToYaml(const AnalysisConfig& config) {
         }
         out << "]\n";
     }
+    out << "\nenvironment:\n"
+        << "  temperature_c: " << formatDouble(config.environment.temperatureC) << "\n"
+        << "  pressure_kpa: " << formatDouble(config.environment.pressureKPa) << "\n"
+        << "  relative_humidity: " << formatDouble(config.environment.relativeHumidity) << "\n"
+        << "  salinity_ppt: " << formatDouble(config.environment.salinityPpt) << "\n"
+        << "  depth_m: " << formatDouble(config.environment.depthM) << "\n"
+        << "  ph: " << formatDouble(config.environment.pH) << "\n"
+        << "  apply_medium_filter: " << (config.environment.applyMediumFilter ? "true" : "false")
+        << "\n"
+        << "  filter_medium: " << config.environment.filterMedium << "\n"
+        << "  path_length_m: " << formatDouble(config.environment.pathLengthM) << "\n";
+
     out << "\ncolor:\n"
         << "  mode: " << config.color.mode << "\n"
         << "  gamut: " << config.color.gamut << "\n"
@@ -457,6 +580,18 @@ std::string manifestToYaml(const RunManifest& manifest) {
         << "  input_samples: " << manifest.inputSamples << "\n"
         << "  mapping_description: \"" << manifest.mapperDescription << "\"\n\n"
         << configToYaml(manifest.config);
+
+    if (!manifest.fidelity.empty()) {
+        // Em bloco de comentario: e um relatorio para humanos, e mantem o
+        // manifesto relegivel pelo proprio parser do projeto.
+        out << "\n# ";
+        const std::string report = manifest.fidelity.report();
+        for (char ch : report) {
+            out << ch;
+            if (ch == '\n') out << "# ";
+        }
+        out << "\n";
+    }
     return out.str();
 }
 

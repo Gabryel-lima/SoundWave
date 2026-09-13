@@ -1,0 +1,19 @@
+# HIPOTESE NULA MAXIMA: f_EM = f_som
+#
+# Unico mapeamento com justificativa fisica plena: um fonon e um foton de mesma
+# frequencia carregam a mesma energia (E = h*f), entao a identidade preserva
+# energia por quantum exatamente.
+#
+# Resultado: a faixa audivel inteira vira radio ELF/VLF, com comprimentos de onda
+# de 15 km a 15.000 km. NADA visivel -- e esse e o ponto. Sem uma escolha
+# arbitraria, nao ha cor.
+#
+#   soundwave analyze "gen:sweep:0:3" --config configs/identity-physical.yaml
+#   soundwave fidelity --config configs/identity-physical.yaml
+
+mapping:
+  type: identity
+  out_of_range: extrapolate
+
+color:
+  mode: visible-with-bands  # tudo sai em pseudocor de radio, corretamente rotulada
