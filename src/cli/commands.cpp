@@ -17,6 +17,7 @@
 #include "soundwave/render/plots.hpp"
 #include "soundwave/mapping/physical_mappers.hpp"
 #include "soundwave/physics/medium_filter.hpp"
+#include "soundwave/physics/survival.hpp"
 #include "soundwave/viz/realtime.hpp"
 
 namespace soundwave::cli {
@@ -726,6 +727,122 @@ int commandFidelity(const Args& args) {
     return 0;
 }
 
+int commandAlign(const Args& args) {
+    AnalysisConfig config;
+    if (!resolveConfig(args, config)) return 2;
+
+    const std::string name = args.positional.size() > 1 ? args.positional[1] : "sea-water";
+    const auto medium = media::byName(name);
+    if (!medium) {
+        std::cerr << "erro: meio desconhecido: " << name << "\n";
+        return 2;
+    }
+
+    MediumFilterSettings settings;
+    settings.acoustic = *medium;
+    settings.optical = *medium;
+    settings.conditions = makeConditions(config);
+    settings.pathLengthM = args.getDouble("path", 10.0);
+    const MappingDomain domain;
+
+    std::cout << kBanner << "\n\n"
+              << "ALINHAMENTO POR SOBREVIVENCIA CONJUNTA -- " << medium->name << "\n"
+              << std::string(74, '=') << "\n"
+              << "  J(M) = media sobre log f de  T_som(f) * T_luz(M(f))\n"
+              << "  Primeiro criterio EXTERNO para comparar mapeamentos: quanto da\n"
+              << "  informacao sobrevive a percorrer o mesmo meio nos dois dominios?\n\n";
+
+    // ---- 1. Pontuacao de todos os mapeamentos -------------------------------
+    std::cout << "1. PONTUACAO (caminho de " << std::fixed << std::setprecision(1)
+              << settings.pathLengthM << " m)\n"
+              << "   " << std::left << std::setw(16) << "mapeamento" << std::setw(12) << "J"
+              << std::setw(12) << "teto" << std::setw(14) << "eficiencia" << "no visivel\n"
+              << "   " << std::string(66, '-') << "\n";
+
+    for (const char* type : {"linear", "logarithmic", "octave", "identity", "scale"}) {
+        AnalysisConfig variant = config;
+        variant.mapping.type = type;
+        if (std::string(type) == "identity" || std::string(type) == "scale") {
+            variant.mapping.outOfRange = "extrapolate";
+        }
+        const std::unique_ptr<FrequencyMapper> mapper = makeMapper(variant);
+        const SurvivalScore score = jointSurvival(*mapper, settings, domain);
+        // Monta as porcentagens antes de imprimir: std::setw aplica ao PROXIMO
+        // item, entao "<< setw(13) << valor << \"%\"" alinharia o numero e
+        // deixaria o sinal solto depois do preenchimento.
+        std::ostringstream efficiency;
+        efficiency << std::fixed << std::setprecision(1) << (score.efficiency * 100.0) << "%";
+        std::ostringstream visible;
+        visible << std::fixed << std::setprecision(1) << (score.visibleFraction * 100.0) << "%";
+
+        std::cout << "   " << std::left << std::setw(16) << type << std::setw(12)
+                  << std::setprecision(5) << score.joint << std::setw(12) << score.ceiling
+                  << std::setw(14) << efficiency.str() << visible.str() << "\n";
+    }
+
+    // ---- 2. Os quatro candidatos do alinhamento -----------------------------
+    const AlignedMapper aligned(settings, domain, config.mapping.referenceHz);
+    std::cout << "\n2. CANDIDATOS DO MAPEADOR ALINHADO\n"
+              << "   " << std::left << std::setw(22) << "candidato" << "J\n"
+              << "   " << std::string(40, '-') << "\n";
+    const AlignedMapper::Candidate candidates[] = {
+        AlignedMapper::Candidate::LogAscending, AlignedMapper::Candidate::LogDescending,
+        AlignedMapper::Candidate::OctaveAscending, AlignedMapper::Candidate::OctaveDescending};
+    for (std::size_t i = 0; i < 4; ++i) {
+        std::cout << "   " << std::left << std::setw(22)
+                  << AlignedMapper::candidateName(candidates[i]) << std::setprecision(5)
+                  << aligned.allScores()[i].joint
+                  << (candidates[i] == aligned.chosen() ? "   <-- escolhido" : "") << "\n";
+    }
+
+    double lowest = 1e18;
+    double highest = 0.0;
+    for (const SurvivalScore& score : aligned.allScores()) {
+        lowest = std::min(lowest, score.joint);
+        highest = std::max(highest, score.joint);
+    }
+    std::cout << "\n   >>> RESULTADO NULO: os quatro empatam dentro de "
+              << std::setprecision(2) << ((highest / lowest - 1.0) * 100.0) << "%.\n"
+              << "       Inverter a orientacao NAO alinha os filtros. A secao 3 diz por que.\n";
+
+    // ---- 3. A separacao de escalas ------------------------------------------
+    const ScaleSeparation separation = scaleSeparation(settings, domain);
+    std::cout << "\n3. POR QUE: OS FILTROS SAO DISJUNTOS EM ESCALA\n"
+              << "   Um filtro so carrega informacao onde DISCRIMINA -- onde o contraste\n"
+              << "   entre o que preserva e o que destroi fica entre 2x e 100x.\n\n";
+    auto line = [](const char* label, const TransitionWindow& window) {
+        std::cout << "   " << std::left << std::setw(6) << label;
+        if (!window.found) {
+            std::cout << "sem janela (absorcao nao modelada neste meio)\n";
+            return;
+        }
+        std::cout << "de " << std::setw(12) << formatDistance(window.lowM) << " a "
+                  << std::setw(12) << formatDistance(window.highM) << " (centro "
+                  << formatDistance(window.centreM()) << ")\n";
+    };
+    line("luz", separation.optical);
+    line("som", separation.acoustic);
+
+    if (separation.acoustic.found && separation.optical.found) {
+        std::cout << "\n   sobrepoem: " << (separation.overlaps ? "SIM" : "NAO")
+                  << "   |   separacao: " << std::setprecision(0) << separation.separationFactor
+                  << "x (" << std::setprecision(1) << separation.separationDecades
+                  << " decadas)\n\n";
+        if (!separation.overlaps) {
+            std::cout << "   >>> Nao existe distancia em que os DOIS filtros discriminem.\n"
+                      << "       Onde a luz distingue cores, o som e uniformemente transparente.\n"
+                      << "       Onde o som distingue graves de agudos, a luz ja e zero em todo\n"
+                      << "       o visivel. Alinhar os dois nao e pouco util -- e INDEFINIDO,\n"
+                      << "       porque nao ha regime em que ambos carreguem informacao.\n\n"
+                      << "       Os dominios nao sao so antagonicos em direcao: sao disjuntos\n"
+                      << "       em escala. Ver docs/physics.md.\n";
+        }
+    }
+
+    std::cout << "\n" << kDisclaimer << "\n";
+    return 0;
+}
+
 int commandLive(const Args& args) {
     if (args.positional.size() < 2) {
         std::cerr << "uso: soundwave live <arquivo.wav | gen:tipo:freq:dur> [--width] [--height]\n";
@@ -775,6 +892,9 @@ void printUsage() {
         << "  medium [meio] [--path metros]\n"
         << "      Propriedades reais do meio, a invariancia e os dois filtros antagonicos.\n"
         << "      meios: vacuum air fresh-water sea-water ice fused-silica\n"
+        << "  align [meio] [--path metros]\n"
+        << "      Pontua os mapeamentos por sobrevivencia conjunta no meio, e mostra\n"
+        << "      por que alinhar os dois filtros e indefinido.\n"
         << "  fidelity [--hz 440] [--config f.yaml]\n"
         << "      Orcamento de fidelidade: natureza e incerteza de CADA etapa do pipeline.\n"
         << "  info\n"

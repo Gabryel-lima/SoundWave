@@ -43,6 +43,7 @@ add_library(soundwave_core
     src/physics/fidelity.cpp
     src/physics/medium.cpp
     src/physics/medium_filter.cpp
+    src/physics/survival.cpp
     src/mapping/physical_mappers.cpp
     src/color/spectral.cpp
     src/color/cie_tables.cpp

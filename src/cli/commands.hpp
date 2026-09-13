@@ -26,6 +26,7 @@ int commandConfig(const Args& args);
 int commandInfo(const Args& args);
 int commandMedium(const Args& args);
 int commandFidelity(const Args& args);
+int commandAlign(const Args& args);
 int commandLive(const Args& args);
 
 void printUsage();

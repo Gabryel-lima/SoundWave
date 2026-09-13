@@ -38,9 +38,10 @@ struct AnalysisConfig {
     } analysis;
 
     struct Mapping {
-        // linear | logarithmic | octave | custom | identity | scale
+        // linear | logarithmic | octave | custom | identity | scale | aligned
         //
-        // identity e scale sao as HIPOTESES NULAS fisicamente fundamentadas.
+        // identity e scale sao as HIPOTESES NULAS fisicamente fundamentadas;
+        // aligned escolhe por medida entre candidatos, usando environment.
         // Ver docs/physics.md: elas mostram o que acontece quando voce se recusa
         // a inventar a funcao -- e a resposta e que quase nada fica visivel.
         std::string type = "logarithmic";

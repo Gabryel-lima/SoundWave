@@ -209,7 +209,93 @@ soundwave medium air --path 1000
 
 ---
 
-## 6. Limitações que NÃO podem ser superadas
+## 6. O alinhamento: um resultado nulo, medido
+
+Se os dois filtros são antagônicos, seria natural procurar um mapeamento —
+provavelmente **invertido** — que os alinhe, maximizando a informação que
+sobrevive aos dois trajetos. O projeto implementa o critério e mede.
+
+### O critério
+
+```
+J(M) = média sobre log f de   T_som(f) · T_luz(M(f))
+```
+
+É o **primeiro critério externo** do projeto: o primeiro argumento a favor de um
+mapeamento que não é "parece razoável". A média em `log f`, e não em `f`, porque
+a percepção de altura é logarítmica.
+
+| Mapeamento | J | eficiência | no visível |
+|---|---|---|---|
+| `logarithmic` | 0,43715 | 52,6% | 100% |
+| `octave` | 0,43726 | 52,6% | 100% |
+| `linear` | 0,12019 | 14,5% | 100% |
+| `scale` | 0,03975 | 4,8% | 9,2% |
+| `identity` | 0,00000 | 0,0% | 0% |
+
+O critério se comporta bem: penaliza o `linear` (que empilha a banda no vermelho,
+onde a água absorve) em **3,6×** frente ao `logarithmic`, e dá zero para os
+mapeamentos que não põem nada no visível.
+
+### E então: inverter a orientação alinha?
+
+**Não.** Os quatro candidatos empatam dentro de **0,04%**:
+
+| Candidato | J |
+|---|---|
+| log-ascendente | 0,43715 |
+| log-descendente | 0,43733 |
+| oitava-ascendente | 0,43726 |
+| oitava-descendente | 0,43728 |
+
+### Por quê — e a razão é mais forte que "o ganho é pequeno"
+
+Um filtro só carrega informação onde **discrimina**: onde o contraste entre o que
+preserva e o que destrói é apreciável. Medindo a janela de transição de cada um
+(contraste entre 2× e 100×) em água do mar:
+
+| Filtro | Janela | Centro |
+|---|---|---|
+| **luz** | 27 cm – 1,7 m | 68 cm |
+| **som** | 2,5 km – 15,9 km | 6,3 km |
+
+**Separação: 9.171× — 4,0 décadas.** Cada janela tem apenas 0,8 décadas de
+largura. Elas **não se sobrepõem**.
+
+> **Não existe comprimento de caminho em que os dois filtros discriminem
+> simultaneamente.** Onde a luz distingue cores, o som é uniformemente
+> transparente. Onde o som distingue graves de agudos, a luz já é exatamente zero
+> em todo o visível.
+
+Por isso o empate: nas distâncias em que a luz discrimina, `T_som` é praticamente
+constante na banda inteira, então `J` vira a média de `T_luz` sobre a imagem — e
+os quatro candidatos induzem a **mesma medida** no visível, apenas percorrida em
+ordens diferentes. **O empate é por simetria, não coincidência.**
+
+Em água doce é pior: sem o termo de sulfato de magnésio o som viaja ainda mais
+longe, e a separação sobe para **5,4 décadas**. A conclusão é robusta ao meio.
+
+> **Alinhar os dois filtros não é apenas pouco útil — é INDEFINIDO, porque não há
+> regime em que ambos carreguem informação. Os domínios não são só antagônicos em
+> direção: são disjuntos em escala.**
+
+```bash
+soundwave align sea-water
+soundwave align fresh-water --path 100
+```
+
+O `AlignedMapper` é mantido no projeto porque **medir isso é o valor**: ele
+documenta o resultado nulo de forma verificável, em vez de deixar a hipótese em
+aberto. Em um meio hipotético cujas janelas se sobrepusessem, ele encontraria o
+alinhamento.
+
+E ele continua `Arbitrary`: otimizar contra um critério não torna nada físico. O
+critério, a família de candidatos, o meio e o caminho são todos escolhas. O ganho
+é que a escolha *dentro* da família passou a ser decidida por medida.
+
+---
+
+## 7. Limitações que NÃO podem ser superadas
 
 Estas não são pendências de implementação. São restrições estruturais; nenhuma
 versão futura do SoundWave vai removê-las.
@@ -224,6 +310,7 @@ versão futura do SoundWave vai removê-las.
 | 6 | **>90% das cores espectrais não cabem no sRGB** | O locus espectral é externo ao triângulo de três primárias. Limite de qualquer display RGB. |
 | 7 | **Som não se combina como luz** | Duas senoides somadas dão dois picos; duas luzes somadas dão uma cor intermediária. A mistura ponderada é apresentação, não modelo. |
 | 8 | **Não existe "a cor de uma frequência sonora"** | Som e luz não compartilham mecanismo. Qualquer correspondência é escolhida. |
+| 9 | **Os filtros do meio são disjuntos em escala** | As janelas de transição estão separadas por 4–5,4 décadas. Alinhá-los é indefinido, não difícil. |
 
 ### Limitações que são apenas do estado atual
 
@@ -240,7 +327,7 @@ Estas **podem** melhorar, e vale distinguir:
 
 ---
 
-## 7. Fontes
+## 8. Fontes
 
 | Modelo | Fonte | Validação neste projeto |
 |---|---|---|

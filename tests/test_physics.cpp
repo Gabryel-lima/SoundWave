@@ -8,6 +8,7 @@
 #include "soundwave/color/em_band.hpp"
 #include "soundwave/mapping/mappers.hpp"
 #include "soundwave/physics/medium_filter.hpp"
+#include "soundwave/physics/survival.hpp"
 
 using namespace soundwave;
 
@@ -464,4 +465,168 @@ TEST(fidelity, relatorio_menciona_o_elo_mais_fraco) {
     CHECK(report.find("INDEFINIDA") != std::string::npos);
     CHECK(report.find("arbitrario") != std::string::npos);
     CHECK(report.find("NAO e uma medida") != std::string::npos);
+}
+
+// =============================================================================
+// SOBREVIVENCIA CONJUNTA E ALINHAMENTO
+//
+// Esta secao documenta um RESULTADO NULO de forma verificavel. A hipotese era:
+// como os dois filtros do meio sao antagonicos, existiria um mapeamento
+// (provavelmente invertido) que os alinha e maximiza a informacao que sobrevive
+// aos dois trajetos.
+//
+// A medida diz que nao. E a razao e mais forte que "o ganho e pequeno".
+// =============================================================================
+
+namespace {
+
+MediumFilterSettings seaAt(double pathM) {
+    MediumFilterSettings settings;
+    settings.acoustic = media::seaWater();
+    settings.optical = media::seaWater();
+    settings.conditions.temperatureC = 20.0;
+    settings.conditions.salinityPpt = 35.0;
+    settings.pathLengthM = pathM;
+    return settings;
+}
+
+}  // namespace
+
+TEST(survival, pontua_qualquer_mapeador) {
+    const MediumFilterSettings settings = seaAt(10.0);
+    const MappingDomain domain;
+    const LogMapper mapper(domain);
+    const SurvivalScore score = jointSurvival(mapper, settings, domain);
+
+    CHECK(score.joint > 0.0);
+    CHECK(score.joint <= score.ceiling);          // nunca supera o teto
+    CHECK(score.efficiency > 0.0);
+    CHECK(score.efficiency <= 1.0);
+    CHECK_NEAR(score.visibleFraction, 1.0, 1e-9); // log mapeia todo o audivel no visivel
+    CHECK_NEAR(score.opticalBestNm, 485.0, 15.0); // o "azul" da agua
+}
+
+TEST(survival, linear_pontua_muito_pior_que_log) {
+    // Sanidade do criterio: ele tem de penalizar o contra-exemplo conhecido.
+    // O linear empilha quase toda a banda audivel no extremo vermelho, que e
+    // exatamente onde a agua absorve.
+    const MediumFilterSettings settings = seaAt(10.0);
+    const MappingDomain domain;
+    const double logScore = jointSurvival(LogMapper(domain), settings, domain).joint;
+    const double linearScore = jointSurvival(LinearMapper(domain), settings, domain).joint;
+    CHECK(linearScore < logScore * 0.5);
+}
+
+TEST(survival, mapeamento_fora_do_visivel_pontua_zero) {
+    // Um mapeamento que joga tudo fora do visivel nao pode ganhar por omissao:
+    // a fracao visivel cai a zero, e o objetivo tambem.
+    const MediumFilterSettings settings = seaAt(10.0);
+    const MappingDomain domain;
+    const IdentityMapper identity(domain);
+    const SurvivalScore score = jointSurvival(identity, settings, domain);
+    CHECK_NEAR(score.visibleFraction, 0.0, 1e-9);
+    CHECK_NEAR(score.joint, 0.0, 1e-12);
+}
+
+TEST(survival, alinhamento_nao_traz_ganho_em_agua) {
+    // O RESULTADO NULO, medido. Os quatro candidatos empatam dentro de 1%.
+    const AlignedMapper aligned(seaAt(10.0), MappingDomain{});
+    const auto& scores = aligned.allScores();
+
+    double lowest = 1e9;
+    double highest = 0.0;
+    for (const SurvivalScore& score : scores) {
+        lowest = std::min(lowest, score.joint);
+        highest = std::max(highest, score.joint);
+    }
+    CHECK(lowest > 0.0);
+    CHECK(highest / lowest < 1.01);  // empate tecnico
+}
+
+TEST(survival, a_razao_do_empate_e_a_simetria_da_medida) {
+    // Por que empatam: nas distancias em que a luz discrimina, T_som e quase
+    // constante em toda a banda. Entao J vira a media de T_luz sobre a imagem --
+    // e os quatro candidatos induzem a MESMA medida no visivel, so percorrida em
+    // ordens diferentes. O empate e por simetria, nao coincidencia.
+    const MediumFilterSettings settings = seaAt(10.0);
+    Conditions c = settings.conditions;
+
+    const double low = acousticTransmittance(settings.acoustic, 20.0, settings.pathLengthM, c);
+    const double high = acousticTransmittance(settings.acoustic, 20000.0, settings.pathLengthM, c);
+    CHECK(low / high < 1.01);   // T_som praticamente constante na banda
+    CHECK(high > 0.99);
+}
+
+TEST(survival, janelas_de_transicao_nao_se_sobrepoem) {
+    // O resultado central: nao ha distancia em que os DOIS filtros discriminem.
+    const ScaleSeparation separation = scaleSeparation(seaAt(10.0), MappingDomain{});
+
+    CHECK(separation.acoustic.found);
+    CHECK(separation.optical.found);
+    CHECK(!separation.overlaps);
+
+    // Luz discrimina em torno de ~0,7 m; som em torno de ~6 km.
+    CHECK(separation.optical.centreM() < 5.0);
+    CHECK(separation.acoustic.centreM() > 1000.0);
+    CHECK(separation.separationDecades > 3.0);
+}
+
+TEST(survival, agua_doce_separa_ainda_mais) {
+    // Agua doce nao tem o termo de sulfato de magnesio, entao o som viaja ainda
+    // mais longe -- e a separacao PIORA. A conclusao e robusta ao meio.
+    MediumFilterSettings fresh = seaAt(10.0);
+    fresh.acoustic = media::freshWater();
+    fresh.optical = media::freshWater();
+
+    const ScaleSeparation sea = scaleSeparation(seaAt(10.0), MappingDomain{});
+    const ScaleSeparation lake = scaleSeparation(fresh, MappingDomain{});
+    CHECK(!lake.overlaps);
+    CHECK(lake.separationDecades > sea.separationDecades);
+}
+
+TEST(survival, meio_sem_absorcao_modelada_nao_inventa_janela) {
+    // Ar nao tem absorcao optica modelada. O correto e nao encontrar janela,
+    // em vez de reportar uma janela infinita.
+    MediumFilterSettings air;
+    air.acoustic = media::air();
+    air.optical = media::air();
+    const ScaleSeparation separation = scaleSeparation(air, MappingDomain{});
+    CHECK(separation.acoustic.found);   // ISO 9613-1 esta modelada
+    CHECK(!separation.optical.found);   // absorcao optica do ar, nao
+    CHECK(!separation.overlaps);
+}
+
+TEST(survival, alinhado_e_determinista) {
+    // Com quatro candidatos quase empatados, o desempate precisa ser estavel --
+    // caso contrario duas execucoes escolheriam mapeamentos diferentes.
+    const AlignedMapper a(seaAt(10.0), MappingDomain{});
+    const AlignedMapper b(seaAt(10.0), MappingDomain{});
+    CHECK(a.chosen() == b.chosen());
+    CHECK(a.map(440.0) == b.map(440.0));
+}
+
+TEST(survival, alinhado_declara_o_resultado_nulo) {
+    const AlignedMapper aligned(seaAt(10.0), MappingDomain{});
+    const std::string text = aligned.describe();
+    CHECK(text.find("NAO e um mapeamento fisico") != std::string::npos);
+    CHECK(text.find("por medida") != std::string::npos);
+
+    // E continua Arbitrary -- otimizar contra um criterio nao torna fisico.
+    const FidelityBudget budget = aligned.fidelity();
+    CHECK(budget.hasArbitraryStep());
+    CHECK(std::isnan(budget.combinedRelativeUncertainty()));
+}
+
+TEST(survival, alinhado_respeita_o_candidato_escolhido) {
+    const AlignedMapper aligned(seaAt(10.0), MappingDomain{});
+    // map() tem de concordar com evaluate() do candidato vencedor.
+    for (double f : {25.0, 440.0, 8000.0}) {
+        CHECK(aligned.map(f) == aligned.evaluate(aligned.chosen(), f));
+    }
+    // E os candidatos descendentes de fato invertem a orientacao.
+    const double lowAsc = aligned.evaluate(AlignedMapper::Candidate::LogAscending, 20.0);
+    const double highAsc = aligned.evaluate(AlignedMapper::Candidate::LogAscending, 20000.0);
+    const double lowDesc = aligned.evaluate(AlignedMapper::Candidate::LogDescending, 20.0);
+    CHECK(lowAsc < highAsc);
+    CHECK_NEAR(lowDesc, highAsc, highAsc * 1e-9);
 }

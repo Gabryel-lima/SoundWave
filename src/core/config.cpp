@@ -14,6 +14,7 @@
 #include "soundwave/dsp/fft.hpp"
 #include "soundwave/mapping/mappers.hpp"
 #include "soundwave/mapping/physical_mappers.hpp"
+#include "soundwave/physics/survival.hpp"
 
 namespace soundwave {
 namespace {
@@ -279,7 +280,7 @@ std::vector<std::string> validateConfig(const AnalysisConfig& config) {
 
     const std::string& type = config.mapping.type;
     if (type != "linear" && type != "logarithmic" && type != "octave" && type != "custom" &&
-        type != "identity" && type != "scale") {
+        type != "identity" && type != "scale" && type != "aligned") {
         problems.push_back("mapping.type desconhecido: " + type);
     }
     if (type == "scale") {
@@ -361,6 +362,10 @@ std::unique_ptr<FrequencyMapper> makeMapper(const AnalysisConfig& config) {
 
     const std::string& type = config.mapping.type;
     if (type == "identity") return std::make_unique<IdentityMapper>(domain);
+    if (type == "aligned") {
+        return std::make_unique<AlignedMapper>(makeMediumFilterSettings(config), domain,
+                                               config.mapping.referenceHz);
+    }
     if (type == "scale") {
         const Medium acoustic =
             media::byName(config.mapping.acousticMedium).value_or(media::air());
@@ -441,7 +446,9 @@ FidelityBudget pipelineFidelity(const AnalysisConfig& config, const FrequencyMap
 
     // Camada 2 -- transformacao. Aqui mora a escolha, salvo nos dois mapeadores
     // fisicos, que declaram o proprio orcamento.
-    if (const auto* scale = dynamic_cast<const ScaleMapper*>(&mapper)) {
+    if (const auto* aligned = dynamic_cast<const AlignedMapper*>(&mapper)) {
+        budget.merge(aligned->fidelity());
+    } else if (const auto* scale = dynamic_cast<const ScaleMapper*>(&mapper)) {
         budget.merge(scale->fidelity());
     } else if (const auto* identity = dynamic_cast<const IdentityMapper*>(&mapper)) {
         budget.add(identity->fidelity());

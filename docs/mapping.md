@@ -129,6 +129,23 @@ mas não some do `Spectrum`.
 infravermelho (`1e13`–`3e13` Hz) é válido, e a camada 3 responderá com
 pseudocores corretamente rotuladas. Nada no código assume que o alvo é visível.
 
+## Um critério externo: sobrevivência conjunta
+
+Há agora uma forma de comparar mapeamentos que não depende de gosto:
+
+```
+J(M) = média sobre log f de  T_som(f) · T_luz(M(f))
+```
+
+Ela penaliza corretamente o `linear` (3,6× pior que o `logarithmic`) e dá zero
+para mapeamentos que não põem nada no visível. Ver `soundwave align` e
+[`physics.md`](physics.md) §6.
+
+**O que ela NÃO conseguiu:** encontrar um alinhamento. Os quatro candidatos
+testados empatam dentro de 0,04%, porque as janelas de transição dos dois filtros
+estão separadas por 4 décadas e não se sobrepõem. Resultado nulo, medido e
+documentado.
+
 ## Como julgar um mapeamento
 
 Não existe métrica única. O projeto expõe três eixos, e `describe()` de cada
@@ -137,6 +154,7 @@ mapeador declara os três — esse texto vai direto para o manifesto:
 1. **Monotonicidade** — a ordem de altura sobrevive?
 2. **Invertibilidade** — dá para voltar da cor para o som?
 3. **Equivalência de oitava** — a relação musical mais forte sobrevive?
+4. **Sobrevivência conjunta** — quanto resiste à travessia de um meio real?
 
 Nenhum mapeador satisfaz os três. O teorema informal por trás disso: com
 compressão de 11×, preservar equivalência de oitava exige periodicidade, e

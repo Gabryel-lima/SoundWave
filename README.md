@@ -31,7 +31,7 @@ f_som  →  f_EM  →  λ  →  XYZ  →  sRGB
 
 ```bash
 cmake -S . -B build && cmake --build build -j
-./build/soundwave_tests          # 174 testes, sem dependência nenhuma
+./build/soundwave_tests          # 185 testes, sem dependência nenhuma
 
 ./build/soundwave info           # a assimetria audível/visível
 ./build/soundwave map 440        # a cadeia completa para uma frequência
@@ -121,6 +121,52 @@ Distância de meia potência em água do mar:
 ./build/soundwave medium sea-water
 ```
 
+## O primeiro critério externo — e o resultado nulo que ele revelou
+
+Todos os mapeamentos são escolhas, e até aqui nenhum tinha argumento a favor além
+de "parece razoável". O projeto agora mede um critério externo:
+
+```
+J(M) = média sobre log f de  T_som(f) · T_luz(M(f))
+```
+
+*Se o som percorre um meio real e a luz correspondente percorre o mesmo meio, que
+fração sobrevive aos dois trajetos?*
+
+| Mapeamento | J | eficiência | no visível |
+|---|---|---|---|
+| `logarithmic` | 0,43715 | 52,6% | 100% |
+| `octave` | 0,43726 | 52,6% | 100% |
+| `linear` | 0,12019 | 14,5% | 100% |
+| `scale` | 0,03975 | 4,8% | 9,2% |
+| `identity` | 0,00000 | 0,0% | 0% |
+
+O critério penaliza o `linear` em **3,6×** — ele empilha a banda no vermelho, que
+é onde a água absorve.
+
+### Inverter a orientação alinha os filtros? **Não.**
+
+Os quatro candidatos empatam dentro de **0,04%**. E a razão é mais forte que "o
+ganho é pequeno". Medindo onde cada filtro **discrimina**:
+
+| Filtro | Janela de transição | Centro |
+|---|---|---|
+| **luz** | 27 cm – 1,7 m | 68 cm |
+| **som** | 2,5 km – 15,9 km | 6,3 km |
+
+**Separação: 4,0 décadas. Elas não se sobrepõem.**
+
+> **Não existe distância em que os dois filtros discriminem simultaneamente.**
+> Onde a luz distingue cores, o som é uniformemente transparente. Onde o som
+> distingue graves de agudos, a luz já é zero em todo o visível.
+>
+> Alinhar os dois não é pouco útil — é **indefinido**. Os domínios não são só
+> antagônicos em direção: são **disjuntos em escala**.
+
+```bash
+./build/soundwave align sea-water
+```
+
 ## Até onde é confiável: classificação de fidelidade
 
 Todo resultado vem com um orçamento que classifica **cada etapa**:
@@ -203,6 +249,7 @@ Ver [`docs/architecture.md`](docs/architecture.md).
 | `map <hz>` | A cadeia `f_som → f_EM → λ → banda → sRGB`, nos cinco mapeamentos |
 | `medium [meio]` | Propriedades reais do meio, a invariância e os filtros antagônicos |
 | `fidelity` | Orçamento de fidelidade: natureza e incerteza de cada etapa |
+| `align [meio]` | Pontua os mapeamentos por sobrevivência conjunta no meio |
 | `gen <tipo> <saída.wav>` | Sinais de teste determinísticos |
 | `config [saída.yaml]` | Configuração padrão comentada |
 | `info` | Constantes, domínios e a assimetria |
@@ -261,7 +308,7 @@ tolerância". Ver [`docs/reproducibility.md`](docs/reproducibility.md).
 
 Configurações prontas em [`configs/`](configs/): `default`, `octave`,
 `weighted-harmonics`, `full-spectrum`, `linear-counterexample`,
-`scale-physical`, `identity-physical`, `medium-filter`.
+`scale-physical`, `identity-physical`, `medium-filter`, `aligned`.
 
 ## Limitações que NÃO podem ser superadas
 
@@ -278,6 +325,7 @@ removê-las. Lista completa e justificada em [`docs/physics.md`](docs/physics.md
 | 6 | >90% das cores espectrais não cabem no sRGB | O locus é externo ao triângulo |
 | 7 | Som não se combina como luz | Duas senoides dão dois picos, não um médio |
 | 8 | Não existe "a cor de uma frequência sonora" | Domínios sem mecanismo comum |
+| 9 | Os filtros do meio são disjuntos em escala | Janelas separadas por 4–5,4 décadas |
 
 ## Limitações do estado atual
 
@@ -323,7 +371,7 @@ include/soundwave/        src/
 ├── render/  imagem, PNG, interpretação, gráficos
 └── viz/     tempo real com SDL2 (opcional)
 
-tests/      174 testes, framework próprio
+tests/      185 testes, framework próprio
 examples/   pipeline mínimo, comparação de mapeamentos
 configs/    configurações prontas e comentadas
 docs/       teoria, mapeamento, cor, reprodutibilidade
@@ -341,7 +389,7 @@ docs/       teoria, mapeamento, cor, reprodutibilidade
 6. Como escalas musicais aparecem no espaço visual? →
    `example_mapping_comparison`
 7. Dá para medir similaridade entre representações sonoras?
-8. Como diferentes mapeamentos alteram essa similaridade? → `compare`
+8. Como diferentes mapeamentos alteram essa similaridade? → `compare`, `align`
 
 ## Licença
 
