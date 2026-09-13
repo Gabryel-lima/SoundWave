@@ -35,5 +35,9 @@ compile_commands.json
 # Sistema
 Thumbs.db
 desktop.ini
-core
-core.*
+
+# Core dumps -- ancorados na raiz com "/" de proposito. Sem a barra, o padrao
+# "core" casa com QUALQUER arquivo ou diretorio chamado core em qualquer nivel,
+# e passa a ignorar src/core/ e include/soundwave/core/ silenciosamente.
+/core
+/core.*
