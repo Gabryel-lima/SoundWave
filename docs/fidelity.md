@@ -192,6 +192,17 @@ Detalhes em [`color.md`](color.md).
 
 ---
 
+## O critério também se aplica a este projeto
+
+A cadeia de verificação dos modelos físicos **não é uniforme**: Malitson e
+ISO 9613-1 foram conferidos contra valores publicados independentes; Mackenzie e
+Francois–Garrison foram conferidos apenas contra uma implementação de terceiros,
+o que verifica o *port* mas herdaria qualquer erro de transcrição dela.
+
+Detalhes em [`physics.md`](physics.md) §7. Registrar isso é o mesmo princípio que
+o resto do documento defende: a diferença entre "verificado" e "verificado contra
+o quê" é exatamente o tipo de coisa que um simulador confiável não esconde.
+
 ## Como ler um resultado do SoundWave
 
 1. Leia o **elo mais fraco** no `manifest.yaml`.

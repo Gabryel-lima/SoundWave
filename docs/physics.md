@@ -251,6 +251,30 @@ Estas **podem** melhorar, e vale distinguir:
 | Índice da sílica fundida | Malitson (1965), *JOSA* 55(10), 1205 | n(587,6 nm) = **1,45846**, casa exatamente |
 | Absorção óptica da água | Segelstein (1981), tese, Univ. Missouri-Rolla | ver ressalva em §6 |
 
-Todas as constantes vieram de implementações ou tabelas publicadas e foram
-conferidas contra valores de referência independentes. Nenhuma foi escrita de
-memória. Ver `tests/test_physics.cpp`.
+Todas as constantes vieram de implementações ou tabelas publicadas. Nenhuma foi
+escrita de memória. Ver `tests/test_physics.cpp`.
+
+### A cadeia de verificação não é uniforme — e isso importa
+
+Aplicando o próprio critério de fidelidade a esta documentação: os seis modelos
+**não** têm o mesmo grau de verificação.
+
+| Modelo | Cadeia | Força |
+|---|---|---|
+| Malitson (sílica) | C++ → constante publicada independente (`n_d = 1,45846`) | **forte** — checagem externa |
+| ISO 9613-1 | C++ → tabela publicada da ISO 9613-2 | **forte** — checagem externa |
+| Daimon (água) | C++ → base refractiveindex.info → artigo | **média** — confere com IAPWS em 0,027% |
+| Mackenzie | C++ → implementação publicada (`arlpy`) | **fraca** — só o *port* foi verificado |
+| Francois–Garrison | C++ → implementação publicada (`arlpy`) | **fraca** — só o *port* foi verificado |
+| Segelstein | C++ → base de dados → tese | **fraca** + ressalva de faixa |
+
+Nos dois casos "fraca", o que foi verificado é que o código C++ reproduz uma
+implementação de terceiros dentro de 10⁻³. **Qualquer erro de transcrição
+cometido por essa implementação em relação ao artigo original seria herdado por
+este projeto sem ser detectado.** Os valores de Mackenzie e Francois–Garrison
+reproduzem ordens de grandeza corretas e a fenomenologia esperada (absorção ∝ f²,
+canal SOFAR), o que é evidência circunstancial — não é uma checagem contra a
+fonte primária.
+
+Fechar essa lacuna exige conferir contra os artigos originais, que não estavam
+acessíveis neste ambiente. Fica registrado como pendência, não como resolvido.
