@@ -1,0 +1,18 @@
+# Estudo dos harmonicos (pergunta 3 do plano): como parciais alteram a cor.
+#
+# O modo weighted mistura as contribuicoes de todos os picos em luz linear, em
+# vez de olhar so o mais forte. Com weight_exponent alto o resultado converge
+# de volta para o modo dominant, de forma continua.
+#
+#   soundwave analyze "gen:harmonics:110:3" --config configs/weighted-harmonics.yaml
+
+analysis:
+  fft_size: 8192
+  hop_size: 1024
+  window: blackman-harris  # vazamento minimo: parciais bem separados
+
+interpretation:
+  mode: weighted
+  max_contributions: 64
+  magnitude_floor_ratio: 0.005   # deixa harmonicos fracos participarem
+  weight_exponent: 1

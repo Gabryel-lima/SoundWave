@@ -1,0 +1,17 @@
+# Espectro eletromagnetico COMPLETO, com extrapolacao para fora do visivel.
+#
+# Demonstra a politica de pseudocor: frequencias mapeadas fora de 400-750 nm
+# recebem rotulos de banda, nunca "cor real". Ver docs/color.md.
+#
+#   soundwave analyze "gen:sweep:0:5" --config configs/full-spectrum.yaml
+
+mapping:
+  type: logarithmic
+  # Alvo deliberadamente mais estreito que a faixa audivel, combinado com
+  # extrapolate: graves caem no infravermelho, agudos no ultravioleta.
+  source_min_hz: 200
+  source_max_hz: 5000
+  out_of_range: extrapolate
+
+color:
+  mode: visible-with-bands

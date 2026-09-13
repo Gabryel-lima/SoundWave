@@ -1,0 +1,19 @@
+# Mapeamento por CLASSE DE ALTURA.
+#
+# A4 (440 Hz) e A5 (880 Hz) recebem exatamente a mesma cor. E o unico mapeamento
+# do projeto que preserva equivalencia de oitava -- ao custo de nao ser
+# monotonico nem invertivel. Ver docs/mapping.md.
+#
+#   soundwave analyze musica.wav --config configs/octave.yaml --out out/octave
+
+analysis:
+  fft_size: 8192          # resolucao melhor ajuda a distinguir notas vizinhas
+  hop_size: 2048
+  window: blackman        # menos vazamento entre parciais proximos
+
+mapping:
+  type: octave
+  reference_hz: 440
+
+interpretation:
+  mode: dominant
